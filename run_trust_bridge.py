@@ -36,7 +36,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--limit",
         type=int,
-        default=int(os.getenv("TRUST_BRIDGE_FINAL_LIMIT", "200")),
+        default=int(os.getenv("TRUST_BRIDGE_FINAL_LIMIT", "2000")),
         help="Final number of leads after filtering/deduplication.",
     )
     parser.add_argument("--city", default=None, help="Optional city filter passed to sources.")
@@ -80,7 +80,7 @@ def main() -> int:
             os.getenv("TRUST_BRIDGE_FREE_PHONE_LOOKUP_MAX_CANDIDATES", "5")
         ),
         free_phone_lookup_max_per_run=int(
-            os.getenv("TRUST_BRIDGE_FREE_PHONE_LOOKUP_MAX_PER_RUN", "200")
+            os.getenv("TRUST_BRIDGE_FREE_PHONE_LOOKUP_MAX_PER_RUN", "2000")
         ),
     )
 

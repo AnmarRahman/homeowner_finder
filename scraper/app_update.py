@@ -14,7 +14,7 @@ from urllib.parse import urlparse
 import requests
 
 APP_NAME = "TrustBridgeLeadBuilder"
-APP_VERSION = "1.0.9"
+APP_VERSION = "1.0.10"
 UPDATE_CONFIG_FILENAME = "update_config.json"
 DEFAULT_MANIFEST_URL = "https://trustbridge-manifest.vercel.app/latest.json"
 

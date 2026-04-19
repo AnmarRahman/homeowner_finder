@@ -291,6 +291,7 @@ python run_trust_bridge.py --sources ca_humboldt_parcels,or_deschutes_taxlots --
 
 Notes:
 - Defaults keep only CA/OR residential homeowner rows and require dialable phone.
+- Default final lead limit is `2000`.
 - Free phone enrichment uses public people-search web results (requests + optional browser automation).
 - Configure free lookup with `TRUST_BRIDGE_FREE_PHONE_LOOKUP_*` values in `.env`.
 - If no phone matches are found from free public sources, use `--allow-missing-phone` for a fallback export.

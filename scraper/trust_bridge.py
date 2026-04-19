@@ -135,7 +135,7 @@ class TrustBridgeOptions:
     free_phone_lookup_timeout_seconds: float = 10.0
     free_phone_lookup_delay_seconds: float = 0.2
     free_phone_lookup_max_candidates: int = 5
-    free_phone_lookup_max_per_run: int = 200
+    free_phone_lookup_max_per_run: int = 2000
 
 
 def build_trust_bridge_leads(

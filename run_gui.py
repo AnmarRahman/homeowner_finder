@@ -78,7 +78,7 @@ class TrustBridgeApp:
         self.per_source_limit = tk.StringVar(
             value=os.getenv("TRUST_BRIDGE_PER_SOURCE_LIMIT", "500")
         )
-        self.final_limit = tk.StringVar(value=os.getenv("TRUST_BRIDGE_FINAL_LIMIT", "200"))
+        self.final_limit = tk.StringVar(value=os.getenv("TRUST_BRIDGE_FINAL_LIMIT", "2000"))
         self.city_filter = tk.StringVar(value="")
         self.output_folder = tk.StringVar(value=str(Path("data").resolve()))
         self.output_name = tk.StringVar(value="trust_bridge_leads")
@@ -392,7 +392,7 @@ class TrustBridgeApp:
                 os.getenv("TRUST_BRIDGE_FREE_PHONE_LOOKUP_MAX_CANDIDATES", "5")
             ),
             free_phone_lookup_max_per_run=int(
-                os.getenv("TRUST_BRIDGE_FREE_PHONE_LOOKUP_MAX_PER_RUN", "200")
+                os.getenv("TRUST_BRIDGE_FREE_PHONE_LOOKUP_MAX_PER_RUN", "2000")
             ),
         )
 
