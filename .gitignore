@@ -1,0 +1,19 @@
+# Environment / local config
+.env
+.venv/
+update_config.json
+
+# Build artifacts
+build/
+dist/
+
+# Python cache
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Generated output
+data/
+
+# Local helper repos/folders
+manifest_repo/
