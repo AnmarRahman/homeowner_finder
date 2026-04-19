@@ -16,7 +16,11 @@ from scraper.app_update import (
     download_update_binary,
     is_frozen_app,
 )
-from scraper.trust_bridge_runner import TrustBridgeRunConfig, run_trust_bridge
+from scraper.trust_bridge_runner import (
+    RunCancelledError,
+    TrustBridgeRunConfig,
+    run_trust_bridge,
+)
 
 STATE_SOURCE_MAP: dict[str, str] = {
     "CA": "ca_humboldt_parcels",
@@ -54,6 +58,7 @@ class TrustBridgeApp:
 
         self.events: queue.Queue[tuple[str, dict]] = queue.Queue()
         self.worker: threading.Thread | None = None
+        self.stop_event = threading.Event()
 
         self.style = ttk.Style(self.root)
         if "clam" in set(self.style.theme_names()):
@@ -193,7 +198,13 @@ class TrustBridgeApp:
         controls.pack(fill=tk.X, pady=(4, 8))
         self.start_button = ttk.Button(controls, text="Start", command=self._start)
         self.start_button.pack(side=tk.LEFT)
-        ttk.Button(controls, text="Exit", command=self.root.destroy).pack(side=tk.LEFT, padx=8)
+        self.stop_button = ttk.Button(
+            controls,
+            text="Stop",
+            command=self._stop,
+            state=tk.DISABLED,
+        )
+        self.stop_button.pack(side=tk.LEFT, padx=8)
 
         progress_frame = ttk.LabelFrame(main, text="Progress")
         progress_frame.pack(fill=tk.BOTH, expand=True)
@@ -228,7 +239,7 @@ class TrustBridgeApp:
                 "4. Click the Theme button to switch Light/Dark.\n"
                 "5. Optional: enable browser automation for free phone lookup.\n"
                 "6. Choose output folder, file name, and format.\n"
-                "7. Click Start.\n\n"
+                "7. Click Start. Use Stop anytime to cancel the current run.\n\n"
                 "Fetch limit (per state source): records fetched from each state's source before filtering.\n"
                 "Final lead limit: max rows after filtering + deduplication.\n"
                 "The app fetches records, applies your current Trust Bridge filters,\n"
@@ -335,10 +346,20 @@ class TrustBridgeApp:
         self.progress_value.set(0)
         self.status_text.set("Starting...")
         self._log("Starting run...")
+        self.stop_event.clear()
         self.start_button.configure(state=tk.DISABLED)
+        self.stop_button.configure(state=tk.NORMAL)
 
         self.worker = threading.Thread(target=self._run_worker, args=(config,), daemon=True)
         self.worker.start()
+
+    def _stop(self) -> None:
+        if not self.worker or not self.worker.is_alive():
+            return
+        self.stop_event.set()
+        self.status_text.set("Stopping...")
+        self._log("Stop requested. Waiting for current step to finish...")
+        self.stop_button.configure(state=tk.DISABLED)
 
     def _build_config(self) -> TrustBridgeRunConfig:
         states: list[str] = []
@@ -408,8 +429,14 @@ class TrustBridgeApp:
 
     def _run_worker(self, config: TrustBridgeRunConfig) -> None:
         try:
-            result = run_trust_bridge(config, progress=self._emit_progress)
+            result = run_trust_bridge(
+                config,
+                progress=self._emit_progress,
+                cancel_requested=self.stop_event.is_set,
+            )
             self.events.put(("done", {"result": result}))
+        except RunCancelledError as exc:
+            self.events.put(("cancelled", {"message": str(exc)}))
         except Exception as exc:
             self.events.put(
                 (
@@ -451,11 +478,18 @@ class TrustBridgeApp:
                             f"Collected {result.lead_count} lead(s)\nSaved to:\n{result.output_path}",
                         )
                     self.start_button.configure(state=tk.NORMAL)
+                    self.stop_button.configure(state=tk.DISABLED)
+                elif event == "cancelled":
+                    self.status_text.set("Stopped")
+                    self._log(payload.get("message", "Run stopped by user."))
+                    self.start_button.configure(state=tk.NORMAL)
+                    self.stop_button.configure(state=tk.DISABLED)
                 elif event == "error":
                     self.status_text.set("Failed")
                     self._log("Run failed.")
                     self._log(payload["message"])
                     self.start_button.configure(state=tk.NORMAL)
+                    self.stop_button.configure(state=tk.DISABLED)
                     messagebox.showerror(
                         "Run failed",
                         f"{payload['message']}\n\nCheck the log area for details.",

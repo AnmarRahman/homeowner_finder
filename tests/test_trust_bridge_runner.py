@@ -1,6 +1,8 @@
 from pathlib import Path
 
-from scraper.trust_bridge_runner import TrustBridgeRunConfig, run_trust_bridge
+import pytest
+
+from scraper.trust_bridge_runner import RunCancelledError, TrustBridgeRunConfig, run_trust_bridge
 
 
 def test_run_trust_bridge_with_mock_source() -> None:
@@ -23,3 +25,20 @@ def test_run_trust_bridge_with_mock_source() -> None:
     assert output_path.exists()
     assert result.source_errors == {}
     assert result.no_results_message == ""
+
+
+def test_run_trust_bridge_can_be_cancelled_before_fetch() -> None:
+    output_path = Path("data") / "runner_test_cancelled.csv"
+    config = TrustBridgeRunConfig(
+        source_keys=["mock"],
+        states=("CA",),
+        per_source_limit=25,
+        final_limit=10,
+        city=None,
+        output_path=output_path,
+        allow_missing_phone=True,
+        prefer_owner_occupied=True,
+    )
+
+    with pytest.raises(RunCancelledError):
+        run_trust_bridge(config, cancel_requested=lambda: True)

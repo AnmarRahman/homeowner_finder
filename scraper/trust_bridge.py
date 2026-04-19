@@ -7,7 +7,7 @@ import time
 from dataclasses import dataclass, asdict
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any, Callable, Iterable
 
 from scraper.free_phone_lookup import lookup_free_phones
 from scraper.models import PropertyRecord
@@ -143,14 +143,31 @@ def build_trust_bridge_leads(
     source_to_records: dict[str, list[PropertyRecord]],
     final_limit: int,
     options: TrustBridgeOptions,
+    progress: Callable[[int, int, str], None] | None = None,
+    should_cancel: Callable[[], bool] | None = None,
 ) -> list[TrustBridgeLead]:
     lookup_cache: dict[tuple[str, str, str, str], dict[str, Any]] = {}
     lookup_calls = 0
     candidates: list[TrustBridgeLead] = []
+    total_records = sum(len(records) for records in source_to_records.values())
+    processed = 0
+    progress_step = 1 if total_records <= 200 else max(5, total_records // 100)
+
+    emit_progress(progress, 0, total_records, "Preparing lead mapping...")
     for source_key, records in source_to_records.items():
         for record in records:
+            if should_cancel and should_cancel():
+                raise InterruptedError("Run stopped by user.")
             lead = map_property_record(record=record, source_key=source_key)
+            processed += 1
             if not lead_passes_non_phone_filters(lead, options):
+                if should_emit_progress(processed, total_records, progress_step):
+                    emit_progress(
+                        progress,
+                        processed,
+                        total_records,
+                        f"Evaluating records {processed}/{total_records} | kept {len(candidates)}",
+                    )
                 continue
             lookup_calls = enrich_lead(
                 lead=lead,
@@ -159,12 +176,63 @@ def build_trust_bridge_leads(
                 lookup_calls=lookup_calls,
             )
             if not lead_passes_filters(lead, options):
+                if should_emit_progress(processed, total_records, progress_step):
+                    emit_progress(
+                        progress,
+                        processed,
+                        total_records,
+                        (
+                            f"Evaluating records {processed}/{total_records} | kept {len(candidates)}"
+                            f" | lookups {lookup_calls}"
+                        ),
+                    )
                 continue
             candidates.append(lead)
+            if should_emit_progress(processed, total_records, progress_step):
+                emit_progress(
+                    progress,
+                    processed,
+                    total_records,
+                    (
+                        f"Evaluating records {processed}/{total_records} | kept {len(candidates)}"
+                        f" | lookups {lookup_calls}"
+                    ),
+                )
 
+    if should_cancel and should_cancel():
+        raise InterruptedError("Run stopped by user.")
+    emit_progress(progress, total_records, total_records, "Ranking candidates...")
     candidates.sort(key=lambda item: lead_priority_tuple(item, options), reverse=True)
+    emit_progress(progress, total_records, total_records, "Deduplicating leads...")
     deduped = deduplicate_leads(candidates)
+    emit_progress(
+        progress,
+        total_records,
+        total_records,
+        f"Filter phase done: {len(deduped)} unique lead(s) before final limit.",
+    )
     return deduped[:final_limit]
+
+
+def emit_progress(
+    progress: Callable[[int, int, str], None] | None,
+    processed: int,
+    total: int,
+    status: str,
+) -> None:
+    if progress is None:
+        return
+    progress(processed, total, status)
+
+
+def should_emit_progress(processed: int, total: int, step: int) -> bool:
+    if total <= 0:
+        return processed == 0
+    if processed <= 15:
+        return True
+    if processed == total:
+        return True
+    return processed % max(1, step) == 0
 
 
 def map_property_record(*, record: PropertyRecord, source_key: str) -> TrustBridgeLead:

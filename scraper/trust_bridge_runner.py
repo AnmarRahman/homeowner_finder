@@ -12,6 +12,11 @@ from scraper.trust_bridge import (
 )
 
 ProgressCallback = Callable[[int, str], None]
+CancelRequested = Callable[[], bool]
+
+
+class RunCancelledError(Exception):
+    """Raised when a user stops an in-flight run."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -58,6 +63,7 @@ def run_trust_bridge(
     config: TrustBridgeRunConfig,
     *,
     progress: ProgressCallback | None = None,
+    cancel_requested: CancelRequested | None = None,
 ) -> TrustBridgeRunResult:
     if config.per_source_limit <= 0:
         raise ValueError("--per-source-limit must be greater than 0.")
@@ -65,12 +71,14 @@ def run_trust_bridge(
         raise ValueError("--limit must be greater than 0.")
 
     report_progress(progress, 3, "Validating settings...")
+    ensure_not_cancelled(cancel_requested)
 
     source_to_records = {}
     source_errors: dict[str, str] = {}
 
     total_sources = len(config.source_keys)
     for index, source_key in enumerate(config.source_keys, start=1):
+        ensure_not_cancelled(cancel_requested)
         report_progress(
             progress,
             5 + int(((index - 1) / max(total_sources, 1)) * 60),
@@ -88,7 +96,10 @@ def run_trust_bridge(
         report_progress(
             progress,
             5 + int((index / max(total_sources, 1)) * 60),
-            f"Finished source {index}/{total_sources}: {source_key}",
+            (
+                f"Finished source {index}/{total_sources}: {source_key}"
+                f" ({len(source_to_records.get(source_key, []))} record(s))"
+            ),
         )
 
     if not source_to_records:
@@ -96,6 +107,7 @@ def run_trust_bridge(
         raise ValueError(f"All requested sources failed. {details}")
 
     report_progress(progress, 72, "Applying filters and deduplication...")
+    ensure_not_cancelled(cancel_requested)
 
     options = TrustBridgeOptions(
         allowed_states=config.states,
@@ -108,14 +120,27 @@ def run_trust_bridge(
         free_phone_lookup_max_candidates=config.free_phone_lookup_max_candidates,
         free_phone_lookup_max_per_run=config.free_phone_lookup_max_per_run,
     )
+    total_records = sum(len(records) for records in source_to_records.values())
 
-    leads = build_trust_bridge_leads(
-        source_to_records=source_to_records,
-        final_limit=config.final_limit,
-        options=options,
-    )
+    def on_build_progress(processed: int, total: int, status: str) -> None:
+        ensure_not_cancelled(cancel_requested)
+        bounded_total = max(total, total_records, 1)
+        phase_progress = min(max(processed, 0), bounded_total) / bounded_total
+        report_progress(progress, 72 + int(phase_progress * 17), status)
+
+    try:
+        leads = build_trust_bridge_leads(
+            source_to_records=source_to_records,
+            final_limit=config.final_limit,
+            options=options,
+            progress=on_build_progress,
+            should_cancel=cancel_requested,
+        )
+    except InterruptedError as exc:
+        raise RunCancelledError("Run stopped by user.") from exc
 
     report_progress(progress, 90, "Exporting results...")
+    ensure_not_cancelled(cancel_requested)
 
     if config.output_path.suffix.lower() == ".xlsx":
         export_trust_bridge_leads_xlsx(leads, config.output_path)
@@ -157,3 +182,8 @@ def report_progress(progress: ProgressCallback | None, percent: int, status: str
     if progress is None:
         return
     progress(max(0, min(100, int(percent))), status)
+
+
+def ensure_not_cancelled(cancel_requested: CancelRequested | None) -> None:
+    if cancel_requested and cancel_requested():
+        raise RunCancelledError("Run stopped by user.")

@@ -214,3 +214,27 @@ def test_build_trust_bridge_leads_enriches_phone_from_free_lookup(monkeypatch) -
 
     assert len(leads) == 1
     assert leads[0].phone_number == "(503) 444-1234"
+
+
+def test_build_trust_bridge_leads_reports_progress() -> None:
+    record = PropertyRecord(
+        owner_name="Owner One",
+        property_address="100 Oak St",
+        mailing_address="100 Oak St",
+        city="Portland",
+        state="OR",
+        zip="97201",
+        property_type="Townhouse",
+        raw={"phone_number": "(503) 444-1234"},
+    )
+    updates: list[str] = []
+
+    build_trust_bridge_leads(
+        source_to_records={"mock": [record]},
+        final_limit=10,
+        options=TrustBridgeOptions(allowed_states=("OR",), require_dialable_phone=True),
+        progress=lambda _processed, _total, status: updates.append(status),
+    )
+
+    assert any("Evaluating records 1/1" in line for line in updates)
+    assert any("Deduplicating leads..." in line for line in updates)
