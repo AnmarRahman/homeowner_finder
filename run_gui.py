@@ -103,7 +103,7 @@ class TrustBridgeApp:
             header,
             textvariable=self.theme_button_text,
             command=self._toggle_theme,
-            width=18,
+            width=4,
         )
         self.theme_button.pack(side=tk.RIGHT, padx=(0, 8))
 
@@ -239,9 +239,9 @@ class TrustBridgeApp:
 
     def _sync_theme_button_text(self) -> None:
         if self.theme_mode.get() == "dark":
-            self.theme_button_text.set("Theme: Dark (Moon)")
+            self.theme_button_text.set("☾")
         else:
-            self.theme_button_text.set("Theme: Light (Sun)")
+            self.theme_button_text.set("☀")
 
     def _apply_theme(self, mode: str) -> None:
         normalized_mode = "dark" if mode == "dark" else "light"
