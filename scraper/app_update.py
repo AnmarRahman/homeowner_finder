@@ -14,7 +14,7 @@ from urllib.parse import urlparse
 import requests
 
 APP_NAME = "TrustBridgeLeadBuilder"
-APP_VERSION = "1.0.2"
+APP_VERSION = "1.0.3"
 UPDATE_CONFIG_FILENAME = "update_config.json"
 DEFAULT_MANIFEST_URL = "https://trustbridge-manifest.vercel.app/latest.json"
 
@@ -38,11 +38,11 @@ def get_manifest_url() -> str:
 
     config_path = get_update_config_path()
     if not config_path.exists():
-        return ""
+        return DEFAULT_MANIFEST_URL
     try:
         payload = json.loads(config_path.read_text(encoding="utf-8"))
     except Exception:
-        return ""
+        return DEFAULT_MANIFEST_URL
     if not isinstance(payload, dict):
         return DEFAULT_MANIFEST_URL
     configured = str(payload.get("manifest_url", "")).strip()
