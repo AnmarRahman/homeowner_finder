@@ -3,6 +3,8 @@ from __future__ import annotations
 from typing import Any
 
 import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 
 from scraper.config import CA_HUMBOLDT_CONFIG
 from scraper.models import PropertyRecord
@@ -16,6 +18,7 @@ class CaliforniaHumboldtParcelsSource(PropertySource):
 
     def __init__(self, timeout_seconds: int = 30) -> None:
         self.timeout_seconds = timeout_seconds
+        self._session = self._build_session()
 
     def fetch(self, limit: int, city: str | None = None) -> list[PropertyRecord]:
         if not CA_HUMBOLDT_CONFIG.dataset_url:
@@ -29,7 +32,15 @@ class CaliforniaHumboldtParcelsSource(PropertySource):
         page_size = max(1, min(CA_HUMBOLDT_CONFIG.page_size, limit))
 
         while len(records) < limit:
-            batch = self._fetch_page(page_size=page_size, offset=offset, city=city)
+            try:
+                batch = self._fetch_page(page_size=page_size, offset=offset, city=city)
+            except requests.RequestException:
+                if page_size > 25:
+                    page_size = max(25, page_size // 2)
+                    continue
+                if records:
+                    break
+                raise
             if not batch:
                 break
 
@@ -40,9 +51,28 @@ class CaliforniaHumboldtParcelsSource(PropertySource):
                     continue
                 if len(records) >= limit:
                     break
-            offset += page_size
+            offset += len(batch)
+            if len(batch) < page_size:
+                break
 
         return records
+
+    def _build_session(self) -> requests.Session:
+        retry = Retry(
+            total=2,
+            connect=2,
+            read=2,
+            status=2,
+            backoff_factor=0.6,
+            status_forcelist=(429, 500, 502, 503, 504),
+            allowed_methods=frozenset({"GET"}),
+            raise_on_status=False,
+        )
+        adapter = HTTPAdapter(max_retries=retry)
+        session = requests.Session()
+        session.mount("https://", adapter)
+        session.mount("http://", adapter)
+        return session
 
     def _fetch_page(
         self,
@@ -62,10 +92,13 @@ class CaliforniaHumboldtParcelsSource(PropertySource):
             "resultOffset": offset,
             "returnGeometry": "false",
         }
-        response = requests.get(
+        response = self._session.get(
             CA_HUMBOLDT_CONFIG.dataset_url,
             params=params,
-            headers={"Accept": "application/json"},
+            headers={
+                "Accept": "application/json",
+                "User-Agent": "TrustBridgeLeadBuilder/1.0 (+https://github.com/AnmarRahman/homeowner_finder)",
+            },
             timeout=self.timeout_seconds,
         )
         response.raise_for_status()
