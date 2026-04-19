@@ -62,7 +62,8 @@ class TrustBridgeApp:
         default_theme = os.getenv("TRUST_BRIDGE_THEME", "light").strip().lower()
         if default_theme not in THEME_PALETTES:
             default_theme = "light"
-        self.theme_mode = tk.StringVar(value="Dark" if default_theme == "dark" else "Light")
+        self.theme_mode = tk.StringVar(value=default_theme)
+        self.theme_button_text = tk.StringVar(value="")
 
         self.state_ca = tk.BooleanVar(value=True)
         self.state_or = tk.BooleanVar(value=True)
@@ -98,16 +99,13 @@ class TrustBridgeApp:
         self.version_label = ttk.Label(header, text=f"v{APP_VERSION}", style="Muted.TLabel")
         self.version_label.pack(side=tk.LEFT, padx=10)
         ttk.Button(header, text="Help", command=self._show_help).pack(side=tk.RIGHT)
-        self.theme_combo = ttk.Combobox(
+        self.theme_button = ttk.Button(
             header,
-            textvariable=self.theme_mode,
-            values=["Light", "Dark"],
-            width=8,
-            state="readonly",
+            textvariable=self.theme_button_text,
+            command=self._toggle_theme,
+            width=18,
         )
-        self.theme_combo.bind("<<ComboboxSelected>>", self._on_theme_changed)
-        self.theme_combo.pack(side=tk.RIGHT, padx=(0, 8))
-        ttk.Label(header, text="Theme:").pack(side=tk.RIGHT, padx=(0, 6))
+        self.theme_button.pack(side=tk.RIGHT, padx=(0, 8))
 
         states = ttk.LabelFrame(main, text="States")
         states.pack(fill=tk.X, pady=(0, 8))
@@ -219,7 +217,7 @@ class TrustBridgeApp:
                 "1. Choose state(s). Sources are picked automatically.\n"
                 "2. Set fetch limit and final lead limit.\n"
                 "3. Optional: set a city exact-match filter.\n"
-                "4. Pick Light or Dark theme if preferred.\n"
+                "4. Click the Theme button to switch Light/Dark.\n"
                 "5. Choose output folder, file name, and format.\n"
                 "6. Click Start.\n\n"
                 "Fetch limit (per state source): records fetched from each state's source before filtering.\n"
@@ -235,14 +233,22 @@ class TrustBridgeApp:
         if selected:
             self.output_folder.set(selected)
 
-    def _on_theme_changed(self, _event: object | None = None) -> None:
-        self._apply_theme(self._selected_theme_key())
+    def _toggle_theme(self) -> None:
+        next_mode = "dark" if self.theme_mode.get() == "light" else "light"
+        self._apply_theme(next_mode)
 
-    def _selected_theme_key(self) -> str:
-        return "dark" if self.theme_mode.get().strip().lower() == "dark" else "light"
+    def _sync_theme_button_text(self) -> None:
+        if self.theme_mode.get() == "dark":
+            self.theme_button_text.set("Theme: Dark (Moon)")
+        else:
+            self.theme_button_text.set("Theme: Light (Sun)")
 
     def _apply_theme(self, mode: str) -> None:
-        palette = THEME_PALETTES.get(mode, THEME_PALETTES["light"])
+        normalized_mode = "dark" if mode == "dark" else "light"
+        self.theme_mode.set(normalized_mode)
+        self._sync_theme_button_text()
+
+        palette = THEME_PALETTES.get(normalized_mode, THEME_PALETTES["light"])
         self.root.configure(bg=palette["bg"])
 
         self.style.configure(".", background=palette["bg"], foreground=palette["fg"])
