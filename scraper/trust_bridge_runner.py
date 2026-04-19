@@ -28,6 +28,7 @@ class TrustBridgeRunConfig:
     enrichment_api_key: str = ""
     enrichment_auth_header: str = "X-API-Key"
     enrichment_delay_seconds: float = 0.2
+    enrichment_csv_path: str = ""
 
 
 @dataclass(frozen=True, slots=True)
@@ -103,6 +104,7 @@ def run_trust_bridge(
         enrichment_api_key=config.enrichment_api_key,
         enrichment_auth_header=config.enrichment_auth_header,
         enrichment_delay_seconds=config.enrichment_delay_seconds,
+        enrichment_csv_path=config.enrichment_csv_path,
     )
 
     leads = build_trust_bridge_leads(
@@ -124,7 +126,7 @@ def run_trust_bridge(
     if len(leads) == 0:
         no_results_message = (
             "No leads passed the current filters. "
-            "Check source field availability for owner/property type, or allow missing phone."
+            "Check source fields, enrichment API/CSV settings, or allow missing phone."
         )
 
     return TrustBridgeRunResult(

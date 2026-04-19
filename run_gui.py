@@ -77,6 +77,9 @@ class TrustBridgeApp:
         )
         self.final_limit = tk.StringVar(value=os.getenv("TRUST_BRIDGE_FINAL_LIMIT", "200"))
         self.city_filter = tk.StringVar(value="")
+        self.enrichment_csv_path = tk.StringVar(
+            value=os.getenv("TRUST_BRIDGE_ENRICHMENT_CSV", "").strip()
+        )
         self.output_folder = tk.StringVar(value=str(Path("data").resolve()))
         self.output_name = tk.StringVar(value="trust_bridge_leads")
         self.progress_value = tk.IntVar(value=0)
@@ -163,6 +166,16 @@ class TrustBridgeApp:
             variable=self.prefer_owner_occupied,
         ).grid(row=2, column=1, sticky=tk.W, pady=4)
 
+        ttk.Label(grid, text="Phone enrichment CSV (optional):").grid(
+            row=3, column=0, sticky=tk.W, pady=2
+        )
+        ttk.Entry(grid, textvariable=self.enrichment_csv_path, width=40).grid(
+            row=3, column=1, columnspan=2, sticky=tk.W, padx=8, pady=2
+        )
+        ttk.Button(grid, text="Browse", command=self._browse_enrichment_csv).grid(
+            row=3, column=3, sticky=tk.W, padx=4, pady=2
+        )
+
         output = ttk.LabelFrame(main, text="Output")
         output.pack(fill=tk.X, pady=(0, 8))
         out_grid = ttk.Frame(output)
@@ -218,8 +231,9 @@ class TrustBridgeApp:
                 "2. Set fetch limit and final lead limit.\n"
                 "3. Optional: set a city exact-match filter.\n"
                 "4. Click the Theme button to switch Light/Dark.\n"
-                "5. Choose output folder, file name, and format.\n"
-                "6. Click Start.\n\n"
+                "5. Optional: select a skip-trace CSV to enrich phone numbers.\n"
+                "6. Choose output folder, file name, and format.\n"
+                "7. Click Start.\n\n"
                 "Fetch limit (per state source): records fetched from each state's source before filtering.\n"
                 "Final lead limit: max rows after filtering + deduplication.\n"
                 "The app fetches records, applies your current Trust Bridge filters,\n"
@@ -232,6 +246,15 @@ class TrustBridgeApp:
         selected = filedialog.askdirectory(initialdir=self.output_folder.get() or str(Path.cwd()))
         if selected:
             self.output_folder.set(selected)
+
+    def _browse_enrichment_csv(self) -> None:
+        selected = filedialog.askopenfilename(
+            title="Select enrichment CSV",
+            filetypes=[("CSV files", "*.csv"), ("All files", "*.*")],
+            initialdir=str(Path.cwd()),
+        )
+        if selected:
+            self.enrichment_csv_path.set(selected)
 
     def _toggle_theme(self) -> None:
         next_mode = "dark" if self.theme_mode.get() == "light" else "light"
@@ -377,6 +400,7 @@ class TrustBridgeApp:
             enrichment_delay_seconds=float(
                 os.getenv("TRUST_BRIDGE_ENRICHMENT_DELAY_SECONDS", "0.2")
             ),
+            enrichment_csv_path=self.enrichment_csv_path.get().strip(),
         )
 
     def _resolve_sources(self, states: list[str]) -> list[str]:

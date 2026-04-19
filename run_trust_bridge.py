@@ -50,6 +50,11 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Keep rows without dialable phones.",
     )
+    parser.add_argument(
+        "--enrich-csv",
+        default=os.getenv("TRUST_BRIDGE_ENRICHMENT_CSV", "").strip(),
+        help="Optional CSV file used to enrich phone/age/income/home value before filtering.",
+    )
     return parser
 
 
@@ -74,6 +79,7 @@ def main() -> int:
         enrichment_delay_seconds=float(
             os.getenv("TRUST_BRIDGE_ENRICHMENT_DELAY_SECONDS", "0.2")
         ),
+        enrichment_csv_path=args.enrich_csv,
     )
 
     try:

@@ -292,6 +292,7 @@ python run_trust_bridge.py --sources ca_humboldt_parcels,or_deschutes_taxlots --
 Notes:
 - Defaults keep only CA/OR residential homeowner rows and require dialable phone.
 - Phone/age/income enrichment is optional and controlled with `TRUST_BRIDGE_ENRICHMENT_*` values in `.env`.
+- You can also supply `--enrich-csv path/to/skiptrace.csv` (or set `TRUST_BRIDGE_ENRICHMENT_CSV`) to merge phone/age/income by owner/address before filtering.
 - If your source does not contain phone and no enrichment endpoint is configured, use `--allow-missing-phone` for a fallback export.
 
 ## CLI usage
