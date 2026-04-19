@@ -4069,6 +4069,10 @@
    'C:\\Users\\Anmar '
    'Abdelrahman\\Desktop\\SYMANTRIQ\\homeowner_finder_ca\\scraper\\__init__.py',
    'PYMODULE'),
+  ('scraper.app_update',
+   'C:\\Users\\Anmar '
+   'Abdelrahman\\Desktop\\SYMANTRIQ\\homeowner_finder_ca\\scraper\\app_update.py',
+   'PYMODULE'),
   ('scraper.config',
    'C:\\Users\\Anmar '
    'Abdelrahman\\Desktop\\SYMANTRIQ\\homeowner_finder_ca\\scraper\\config.py',
