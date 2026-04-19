@@ -16,6 +16,7 @@ import requests
 APP_NAME = "TrustBridgeLeadBuilder"
 APP_VERSION = "1.0.0"
 UPDATE_CONFIG_FILENAME = "update_config.json"
+DEFAULT_MANIFEST_URL = "https://trustbridge-manifest.vercel.app/latest.json"
 
 
 @dataclass(frozen=True, slots=True)
@@ -43,8 +44,9 @@ def get_manifest_url() -> str:
     except Exception:
         return ""
     if not isinstance(payload, dict):
-        return ""
-    return str(payload.get("manifest_url", "")).strip()
+        return DEFAULT_MANIFEST_URL
+    configured = str(payload.get("manifest_url", "")).strip()
+    return configured or DEFAULT_MANIFEST_URL
 
 
 def get_update_config_path() -> Path:

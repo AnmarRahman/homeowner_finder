@@ -147,8 +147,11 @@ Use the `Help` button in the app for a quick usage guide.
 
 The packaged app can check for updates on startup and update itself.
 
-1. Put `update_config.json` next to `TrustBridgeLeadBuilder.exe`.
-2. Add your manifest URL:
+Default manifest URL is built in:
+
+- `https://trustbridge-manifest.vercel.app/latest.json`
+
+You can optionally override it with `update_config.json` next to `TrustBridgeLeadBuilder.exe`:
 
 ```json
 {

@@ -14,7 +14,6 @@ from scraper.app_update import (
     apply_update_and_restart,
     check_for_update,
     download_update_binary,
-    get_update_config_path,
     is_frozen_app,
 )
 from scraper.trust_bridge_runner import TrustBridgeRunConfig, run_trust_bridge
@@ -373,19 +372,6 @@ class TrustBridgeApp:
         try:
             info = check_for_update(APP_VERSION)
             if info is None:
-                config_path = get_update_config_path()
-                if not config_path.exists():
-                    self.events.put(
-                        (
-                            "update_none",
-                            {
-                                "message": (
-                                    f"No update config found at {config_path}. "
-                                    "Create it to enable self-updates."
-                                ),
-                            },
-                        )
-                    )
                 return
             self.events.put(("update_available", {"info": info}))
         except Exception as exc:
