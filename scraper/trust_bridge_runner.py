@@ -24,11 +24,12 @@ class TrustBridgeRunConfig:
     output_path: Path
     allow_missing_phone: bool
     prefer_owner_occupied: bool
-    enrichment_url: str = ""
-    enrichment_api_key: str = ""
-    enrichment_auth_header: str = "X-API-Key"
-    enrichment_delay_seconds: float = 0.2
-    enrichment_csv_path: str = ""
+    free_phone_lookup_enabled: bool = True
+    free_phone_lookup_use_browser: bool = True
+    free_phone_lookup_timeout_seconds: float = 10.0
+    free_phone_lookup_delay_seconds: float = 0.2
+    free_phone_lookup_max_candidates: int = 5
+    free_phone_lookup_max_per_run: int = 200
 
 
 @dataclass(frozen=True, slots=True)
@@ -100,11 +101,12 @@ def run_trust_bridge(
         allowed_states=config.states,
         require_dialable_phone=not config.allow_missing_phone,
         prefer_owner_occupied=config.prefer_owner_occupied,
-        enrichment_url=config.enrichment_url,
-        enrichment_api_key=config.enrichment_api_key,
-        enrichment_auth_header=config.enrichment_auth_header,
-        enrichment_delay_seconds=config.enrichment_delay_seconds,
-        enrichment_csv_path=config.enrichment_csv_path,
+        free_phone_lookup_enabled=config.free_phone_lookup_enabled,
+        free_phone_lookup_use_browser=config.free_phone_lookup_use_browser,
+        free_phone_lookup_timeout_seconds=config.free_phone_lookup_timeout_seconds,
+        free_phone_lookup_delay_seconds=config.free_phone_lookup_delay_seconds,
+        free_phone_lookup_max_candidates=config.free_phone_lookup_max_candidates,
+        free_phone_lookup_max_per_run=config.free_phone_lookup_max_per_run,
     )
 
     leads = build_trust_bridge_leads(
@@ -126,7 +128,7 @@ def run_trust_bridge(
     if len(leads) == 0:
         no_results_message = (
             "No leads passed the current filters. "
-            "Check source fields, enrichment API/CSV settings, or allow missing phone."
+            "Try increasing fetch limit, or enable missing phone if public lookup has no matches."
         )
 
     return TrustBridgeRunResult(

@@ -71,15 +71,15 @@ class TrustBridgeApp:
         self.prefer_owner_occupied = tk.BooleanVar(
             value=os.getenv("TRUST_BRIDGE_PREFER_OWNER_OCCUPIED", "1") == "1"
         )
+        self.free_lookup_use_browser = tk.BooleanVar(
+            value=os.getenv("TRUST_BRIDGE_FREE_PHONE_LOOKUP_USE_BROWSER", "1") == "1"
+        )
         self.output_format = tk.StringVar(value="csv")
         self.per_source_limit = tk.StringVar(
             value=os.getenv("TRUST_BRIDGE_PER_SOURCE_LIMIT", "500")
         )
         self.final_limit = tk.StringVar(value=os.getenv("TRUST_BRIDGE_FINAL_LIMIT", "200"))
         self.city_filter = tk.StringVar(value="")
-        self.enrichment_csv_path = tk.StringVar(
-            value=os.getenv("TRUST_BRIDGE_ENRICHMENT_CSV", "").strip()
-        )
         self.output_folder = tk.StringVar(value=str(Path("data").resolve()))
         self.output_name = tk.StringVar(value="trust_bridge_leads")
         self.progress_value = tk.IntVar(value=0)
@@ -165,16 +165,11 @@ class TrustBridgeApp:
             text="Prefer owner-occupied",
             variable=self.prefer_owner_occupied,
         ).grid(row=2, column=1, sticky=tk.W, pady=4)
-
-        ttk.Label(grid, text="Phone enrichment CSV (optional):").grid(
-            row=3, column=0, sticky=tk.W, pady=2
-        )
-        ttk.Entry(grid, textvariable=self.enrichment_csv_path, width=40).grid(
-            row=3, column=1, columnspan=2, sticky=tk.W, padx=8, pady=2
-        )
-        ttk.Button(grid, text="Browse", command=self._browse_enrichment_csv).grid(
-            row=3, column=3, sticky=tk.W, padx=4, pady=2
-        )
+        ttk.Checkbutton(
+            grid,
+            text="Use browser automation for free phone lookup",
+            variable=self.free_lookup_use_browser,
+        ).grid(row=3, column=0, columnspan=3, sticky=tk.W, pady=4)
 
         output = ttk.LabelFrame(main, text="Output")
         output.pack(fill=tk.X, pady=(0, 8))
@@ -231,13 +226,14 @@ class TrustBridgeApp:
                 "2. Set fetch limit and final lead limit.\n"
                 "3. Optional: set a city exact-match filter.\n"
                 "4. Click the Theme button to switch Light/Dark.\n"
-                "5. Optional: select a skip-trace CSV to enrich phone numbers.\n"
+                "5. Optional: enable browser automation for free phone lookup.\n"
                 "6. Choose output folder, file name, and format.\n"
                 "7. Click Start.\n\n"
                 "Fetch limit (per state source): records fetched from each state's source before filtering.\n"
                 "Final lead limit: max rows after filtering + deduplication.\n"
                 "The app fetches records, applies your current Trust Bridge filters,\n"
                 "deduplicates results, and exports the file. Progress/status appears live.\n\n"
+                "Phone lookup uses free public web sources only.\n\n"
                 f"{update_note}"
             ),
         )
@@ -247,24 +243,15 @@ class TrustBridgeApp:
         if selected:
             self.output_folder.set(selected)
 
-    def _browse_enrichment_csv(self) -> None:
-        selected = filedialog.askopenfilename(
-            title="Select enrichment CSV",
-            filetypes=[("CSV files", "*.csv"), ("All files", "*.*")],
-            initialdir=str(Path.cwd()),
-        )
-        if selected:
-            self.enrichment_csv_path.set(selected)
-
     def _toggle_theme(self) -> None:
         next_mode = "dark" if self.theme_mode.get() == "light" else "light"
         self._apply_theme(next_mode)
 
     def _sync_theme_button_text(self) -> None:
         if self.theme_mode.get() == "dark":
-            self.theme_button_text.set("☾")
+            self.theme_button_text.set("\u263e")
         else:
-            self.theme_button_text.set("☀")
+            self.theme_button_text.set("\u2600")
 
     def _apply_theme(self, mode: str) -> None:
         normalized_mode = "dark" if mode == "dark" else "light"
@@ -392,15 +379,21 @@ class TrustBridgeApp:
             output_path=output_path,
             allow_missing_phone=self.allow_missing_phone.get(),
             prefer_owner_occupied=self.prefer_owner_occupied.get(),
-            enrichment_url=os.getenv("TRUST_BRIDGE_ENRICHMENT_URL", "").strip(),
-            enrichment_api_key=os.getenv("TRUST_BRIDGE_ENRICHMENT_API_KEY", "").strip(),
-            enrichment_auth_header=os.getenv(
-                "TRUST_BRIDGE_ENRICHMENT_AUTH_HEADER", "X-API-Key"
-            ).strip(),
-            enrichment_delay_seconds=float(
-                os.getenv("TRUST_BRIDGE_ENRICHMENT_DELAY_SECONDS", "0.2")
+            free_phone_lookup_enabled=os.getenv("TRUST_BRIDGE_FREE_PHONE_LOOKUP_ENABLED", "1")
+            == "1",
+            free_phone_lookup_use_browser=self.free_lookup_use_browser.get(),
+            free_phone_lookup_timeout_seconds=float(
+                os.getenv("TRUST_BRIDGE_FREE_PHONE_LOOKUP_TIMEOUT_SECONDS", "10")
             ),
-            enrichment_csv_path=self.enrichment_csv_path.get().strip(),
+            free_phone_lookup_delay_seconds=float(
+                os.getenv("TRUST_BRIDGE_FREE_PHONE_LOOKUP_DELAY_SECONDS", "0.2")
+            ),
+            free_phone_lookup_max_candidates=int(
+                os.getenv("TRUST_BRIDGE_FREE_PHONE_LOOKUP_MAX_CANDIDATES", "5")
+            ),
+            free_phone_lookup_max_per_run=int(
+                os.getenv("TRUST_BRIDGE_FREE_PHONE_LOOKUP_MAX_PER_RUN", "200")
+            ),
         )
 
     def _resolve_sources(self, states: list[str]) -> list[str]:

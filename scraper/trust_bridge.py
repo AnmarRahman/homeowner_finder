@@ -9,8 +9,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterable
 
-import requests
-
+from scraper.free_phone_lookup import lookup_free_phones
 from scraper.models import PropertyRecord
 from scraper.normalizer import clean_text
 
@@ -76,18 +75,6 @@ PHONE_KEYS = (
 )
 AGE_KEYS = ("age", "owner_age", "estimated_age")
 INCOME_KEYS = ("income", "income_level", "household_income", "estimated_income")
-CSV_OWNER_KEYS = ("fullname", "ownername", "owner", "name")
-CSV_ADDRESS_KEYS = ("propertyaddress", "address", "situsaddress", "streetaddress")
-CSV_CITY_KEYS = ("city",)
-CSV_STATE_KEYS = ("state",)
-CSV_ZIP_KEYS = ("zip", "zipcode", "postalcode")
-CSV_PHONE_KEYS = ("phonenumber", "phone", "mobilephone", "primaryphone", "cell", "cellphone")
-CSV_AGE_KEYS = ("ownerage", "age", "estimatedage")
-CSV_INCOME_KEYS = ("incomelevel", "income", "estimatedincome", "householdincome")
-CSV_HOME_VALUE_KEYS = ("estimatedhomevalue", "homevalue", "marketvalue", "assessedvalue")
-CSV_OWNER_OCCUPIED_KEYS = ("owneroccupied",)
-CSV_OWNERSHIP_STATUS_KEYS = ("ownershipstatus",)
-CSV_INTENT_TAGS_KEYS = ("intenttags",)
 
 LEAD_FIELDS = [
     "full_name",
@@ -143,11 +130,12 @@ class TrustBridgeOptions:
     allowed_states: tuple[str, ...] = ("CA", "OR")
     require_dialable_phone: bool = True
     prefer_owner_occupied: bool = True
-    enrichment_url: str = ""
-    enrichment_api_key: str = ""
-    enrichment_auth_header: str = "X-API-Key"
-    enrichment_delay_seconds: float = 0.2
-    enrichment_csv_path: str = ""
+    free_phone_lookup_enabled: bool = True
+    free_phone_lookup_use_browser: bool = True
+    free_phone_lookup_timeout_seconds: float = 10.0
+    free_phone_lookup_delay_seconds: float = 0.2
+    free_phone_lookup_max_candidates: int = 5
+    free_phone_lookup_max_per_run: int = 200
 
 
 def build_trust_bridge_leads(
@@ -156,12 +144,20 @@ def build_trust_bridge_leads(
     final_limit: int,
     options: TrustBridgeOptions,
 ) -> list[TrustBridgeLead]:
-    csv_index = load_csv_enrichment_index(options.enrichment_csv_path)
+    lookup_cache: dict[tuple[str, str, str, str], dict[str, Any]] = {}
+    lookup_calls = 0
     candidates: list[TrustBridgeLead] = []
     for source_key, records in source_to_records.items():
         for record in records:
             lead = map_property_record(record=record, source_key=source_key)
-            enrich_lead(lead, options, csv_index)
+            if not lead_passes_non_phone_filters(lead, options):
+                continue
+            lookup_calls = enrich_lead(
+                lead=lead,
+                options=options,
+                lookup_cache=lookup_cache,
+                lookup_calls=lookup_calls,
+            )
             if not lead_passes_filters(lead, options):
                 continue
             candidates.append(lead)
@@ -209,110 +205,73 @@ def map_property_record(*, record: PropertyRecord, source_key: str) -> TrustBrid
 def enrich_lead(
     lead: TrustBridgeLead,
     options: TrustBridgeOptions,
-    csv_index: dict[tuple[str, str, str, str], list[dict[str, str]]],
-) -> None:
-    enrich_lead_from_csv(lead, csv_index)
-    if (
-        lead.phone_number
-        and lead.owner_age
-        and lead.income_level
-        and lead.estimated_home_value
-        and lead.intent_tags
-    ):
-        return
-    enrich_lead_from_api(lead, options)
+    lookup_cache: dict[tuple[str, str, str, str], dict[str, Any]],
+    lookup_calls: int,
+) -> int:
+    if is_dialable_phone(lead.phone_number):
+        return lookup_calls
+    if not options.require_dialable_phone:
+        return lookup_calls
+    if not options.free_phone_lookup_enabled:
+        return lookup_calls
+    if lookup_calls >= options.free_phone_lookup_max_per_run:
+        return lookup_calls
 
-
-def enrich_lead_from_api(lead: TrustBridgeLead, options: TrustBridgeOptions) -> None:
-    if not options.enrichment_url:
-        return
-
-    payload = {
-        "full_name": lead.full_name,
-        "property_address": lead.property_address,
-        "city": lead.city,
-        "state": lead.state,
-        "zip_code": lead.zip_code,
-        "parcel_id": lead.parcel_id,
-    }
-    headers: dict[str, str] = {"Accept": "application/json", "Content-Type": "application/json"}
-    if options.enrichment_api_key:
-        headers[options.enrichment_auth_header] = options.enrichment_api_key
-
-    response = requests.post(
-        options.enrichment_url,
-        headers=headers,
-        data=json.dumps(payload),
-        timeout=20,
+    lookup_key = (
+        normalize_name_for_compare(lead.full_name),
+        normalize_address_for_compare(lead.property_address),
+        normalize_address_for_compare(lead.city),
+        normalize_address_for_compare(lead.state),
     )
-    response.raise_for_status()
-    body = response.json()
-    if not isinstance(body, dict):
+    result = lookup_cache.get(lookup_key)
+    if result is None:
+        result = lookup_free_phones(
+            full_name=lead.full_name,
+            property_address=lead.property_address,
+            city=lead.city,
+            state=lead.state,
+            timeout_seconds=options.free_phone_lookup_timeout_seconds,
+            use_browser_automation=options.free_phone_lookup_use_browser,
+            max_candidates=options.free_phone_lookup_max_candidates,
+        )
+        lookup_cache[lookup_key] = result
+        lookup_calls += 1
+        if options.free_phone_lookup_delay_seconds > 0:
+            time.sleep(options.free_phone_lookup_delay_seconds)
+
+    apply_phone_lookup_result(lead, result)
+    return lookup_calls
+
+
+def apply_phone_lookup_result(lead: TrustBridgeLead, result: dict[str, Any]) -> None:
+    phones = result.get("phones", [])
+    if not isinstance(phones, list) or not phones:
         return
 
-    enriched_phone = normalize_phone(
-        body.get("phone_number") or body.get("phone") or lead.phone_number
-    )
-    lead.phone_number = enriched_phone
-    lead.phone_status = "dialable" if enriched_phone else lead.phone_status
-    lead.owner_age = clean_text(body.get("owner_age") or body.get("age") or lead.owner_age)
-    lead.income_level = clean_text(
-        body.get("income_level") or body.get("income") or lead.income_level
-    )
-    lead.estimated_home_value = clean_text(
-        body.get("estimated_home_value")
-        or body.get("home_value")
-        or lead.estimated_home_value
-    )
-    lead.ownership_status = clean_text(body.get("ownership_status") or lead.ownership_status)
-    if "owner_occupied" in body:
-        lead.owner_occupied = "yes" if bool(body["owner_occupied"]) else "no"
-
-    tags = body.get("intent_tags")
-    if isinstance(tags, list):
-        lead.intent_tags = ";".join(sorted(clean_text(tag) for tag in tags if clean_text(tag)))
-    elif isinstance(tags, str) and clean_text(tags):
-        lead.intent_tags = clean_text(tags)
-
-    if options.enrichment_delay_seconds > 0:
-        time.sleep(options.enrichment_delay_seconds)
-
-
-def enrich_lead_from_csv(
-    lead: TrustBridgeLead,
-    csv_index: dict[tuple[str, str, str, str], list[dict[str, str]]],
-) -> None:
-    if not csv_index:
+    best = phones[0] if isinstance(phones[0], dict) else {}
+    phone = normalize_phone(best.get("number", ""))
+    if not phone:
         return
 
-    candidate = find_csv_enrichment_candidate(lead, csv_index)
-    if not candidate:
-        return
+    lead.phone_number = phone
+    lead.phone_status = "dialable"
 
-    phone = normalize_phone(candidate.get("phone_number", ""))
-    if phone:
-        lead.phone_number = phone
-        lead.phone_status = "dialable"
-
-    if not lead.owner_age:
-        lead.owner_age = clean_text(candidate.get("owner_age"))
-    if not lead.income_level:
-        lead.income_level = clean_text(candidate.get("income_level"))
-    if not lead.estimated_home_value:
-        lead.estimated_home_value = clean_text(candidate.get("estimated_home_value"))
-    if not lead.ownership_status:
-        lead.ownership_status = clean_text(candidate.get("ownership_status"))
-    if not lead.intent_tags:
-        lead.intent_tags = clean_text(candidate.get("intent_tags"))
-
-    owner_occupied = clean_text(candidate.get("owner_occupied")).lower()
-    if owner_occupied in {"yes", "y", "true", "1"}:
-        lead.owner_occupied = "yes"
-    elif owner_occupied in {"no", "n", "false", "0"}:
-        lead.owner_occupied = "no"
+    if isinstance(lead.raw, dict):
+        lead.raw["free_phone_lookup"] = {
+            "phones": phones,
+            "errors": result.get("errors", []),
+        }
 
 
 def lead_passes_filters(lead: TrustBridgeLead, options: TrustBridgeOptions) -> bool:
+    if not lead_passes_non_phone_filters(lead, options):
+        return False
+    if options.require_dialable_phone and not is_dialable_phone(lead.phone_number):
+        return False
+    return True
+
+
+def lead_passes_non_phone_filters(lead: TrustBridgeLead, options: TrustBridgeOptions) -> bool:
     if lead.state.upper() not in {state.upper() for state in options.allowed_states}:
         return False
     if not lead.full_name:
@@ -320,8 +279,6 @@ def lead_passes_filters(lead: TrustBridgeLead, options: TrustBridgeOptions) -> b
     if lead.ownership_status.lower() in {"unknown", ""}:
         return False
     if not is_residential_allowed_type(lead.property_type):
-        return False
-    if options.require_dialable_phone and not is_dialable_phone(lead.phone_number):
         return False
     return True
 
@@ -493,125 +450,6 @@ def find_first_by_substring(raw: dict[str, Any], text: str) -> Any:
     target = text.lower()
     for key, value in raw.items():
         if target in str(key).lower() and clean_text(value):
-            return value
-    return ""
-
-
-def load_csv_enrichment_index(
-    path_value: str,
-) -> dict[tuple[str, str, str, str], list[dict[str, str]]]:
-    path_text = clean_text(path_value)
-    if not path_text:
-        return {}
-
-    path = Path(path_text)
-    if not path.exists():
-        raise ValueError(f"Enrichment CSV file not found: {path}")
-
-    index: dict[tuple[str, str, str, str], list[dict[str, str]]] = {}
-    with path.open("r", encoding="utf-8-sig", newline="") as handle:
-        reader = csv.DictReader(handle)
-        for row in reader:
-            normalized = normalize_enrichment_row(row)
-            if not normalized:
-                continue
-            for key in enrichment_row_identity_keys(normalized):
-                index.setdefault(key, []).append(normalized)
-    return index
-
-
-def normalize_enrichment_row(row: dict[str, Any] | None) -> dict[str, str]:
-    if not row:
-        return {}
-
-    normalized_row = {normalize_header(key): clean_text(value) for key, value in row.items()}
-    owner = pick_csv_value(normalized_row, CSV_OWNER_KEYS)
-    address = pick_csv_value(normalized_row, CSV_ADDRESS_KEYS)
-    city = pick_csv_value(normalized_row, CSV_CITY_KEYS)
-    state = pick_csv_value(normalized_row, CSV_STATE_KEYS).upper()
-    zip_code = pick_csv_value(normalized_row, CSV_ZIP_KEYS)
-    phone = normalize_phone(pick_csv_value(normalized_row, CSV_PHONE_KEYS))
-
-    if not address and not owner:
-        return {}
-
-    return {
-        "full_name": owner,
-        "property_address": address,
-        "city": city,
-        "state": state,
-        "zip_code": zip_code,
-        "phone_number": phone,
-        "owner_age": pick_csv_value(normalized_row, CSV_AGE_KEYS),
-        "income_level": pick_csv_value(normalized_row, CSV_INCOME_KEYS),
-        "estimated_home_value": pick_csv_value(normalized_row, CSV_HOME_VALUE_KEYS),
-        "owner_occupied": pick_csv_value(normalized_row, CSV_OWNER_OCCUPIED_KEYS),
-        "ownership_status": pick_csv_value(normalized_row, CSV_OWNERSHIP_STATUS_KEYS),
-        "intent_tags": pick_csv_value(normalized_row, CSV_INTENT_TAGS_KEYS),
-    }
-
-
-def enrichment_row_identity_keys(row: dict[str, str]) -> list[tuple[str, str, str, str]]:
-    state = normalize_address_for_compare(row.get("state", ""))
-    owner = normalize_name_for_compare(row.get("full_name", ""))
-    address = normalize_address_for_compare(row.get("property_address", ""))
-    city = normalize_address_for_compare(row.get("city", ""))
-    zip_code = normalize_address_for_compare(row.get("zip_code", ""))
-
-    keys: list[tuple[str, str, str, str]] = []
-    if address and state and zip_code:
-        keys.append(("addr_state_zip", state, address, zip_code))
-    if address and state and city:
-        keys.append(("addr_state_city", state, address, city))
-    if owner and address and state:
-        keys.append(("owner_addr_state", state, owner, address))
-    return keys
-
-
-def find_csv_enrichment_candidate(
-    lead: TrustBridgeLead,
-    csv_index: dict[tuple[str, str, str, str], list[dict[str, str]]],
-) -> dict[str, str]:
-    state = normalize_address_for_compare(lead.state)
-    owner = normalize_name_for_compare(lead.full_name)
-    address = normalize_address_for_compare(lead.property_address)
-    city = normalize_address_for_compare(lead.city)
-    zip_code = normalize_address_for_compare(lead.zip_code)
-
-    keys: list[tuple[str, str, str, str]] = []
-    if address and state and zip_code:
-        keys.append(("addr_state_zip", state, address, zip_code))
-    if address and state and city:
-        keys.append(("addr_state_city", state, address, city))
-    if owner and address and state:
-        keys.append(("owner_addr_state", state, owner, address))
-
-    for key in keys:
-        candidates = csv_index.get(key, [])
-        if not candidates:
-            continue
-        return max(candidates, key=enrichment_row_quality_score)
-    return {}
-
-
-def enrichment_row_quality_score(row: dict[str, str]) -> tuple[int, int]:
-    has_phone = 1 if is_dialable_phone(row.get("phone_number", "")) else 0
-    quality = sum(
-        1
-        for key in ("owner_age", "income_level", "estimated_home_value", "ownership_status", "intent_tags")
-        if clean_text(row.get(key))
-    )
-    return (has_phone, quality)
-
-
-def normalize_header(value: Any) -> str:
-    return re.sub(r"[^a-z0-9]", "", clean_text(value).lower())
-
-
-def pick_csv_value(row: dict[str, str], aliases: tuple[str, ...]) -> str:
-    for alias in aliases:
-        value = clean_text(row.get(alias, ""))
-        if value:
             return value
     return ""
 

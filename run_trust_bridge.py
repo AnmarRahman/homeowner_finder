@@ -50,11 +50,6 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Keep rows without dialable phones.",
     )
-    parser.add_argument(
-        "--enrich-csv",
-        default=os.getenv("TRUST_BRIDGE_ENRICHMENT_CSV", "").strip(),
-        help="Optional CSV file used to enrich phone/age/income/home value before filtering.",
-    )
     return parser
 
 
@@ -71,15 +66,22 @@ def main() -> int:
         output_path=Path(args.out),
         allow_missing_phone=args.allow_missing_phone,
         prefer_owner_occupied=os.getenv("TRUST_BRIDGE_PREFER_OWNER_OCCUPIED", "1") == "1",
-        enrichment_url=os.getenv("TRUST_BRIDGE_ENRICHMENT_URL", "").strip(),
-        enrichment_api_key=os.getenv("TRUST_BRIDGE_ENRICHMENT_API_KEY", "").strip(),
-        enrichment_auth_header=os.getenv(
-            "TRUST_BRIDGE_ENRICHMENT_AUTH_HEADER", "X-API-Key"
-        ).strip(),
-        enrichment_delay_seconds=float(
-            os.getenv("TRUST_BRIDGE_ENRICHMENT_DELAY_SECONDS", "0.2")
+        free_phone_lookup_enabled=os.getenv("TRUST_BRIDGE_FREE_PHONE_LOOKUP_ENABLED", "1")
+        == "1",
+        free_phone_lookup_use_browser=os.getenv("TRUST_BRIDGE_FREE_PHONE_LOOKUP_USE_BROWSER", "1")
+        == "1",
+        free_phone_lookup_timeout_seconds=float(
+            os.getenv("TRUST_BRIDGE_FREE_PHONE_LOOKUP_TIMEOUT_SECONDS", "10")
         ),
-        enrichment_csv_path=args.enrich_csv,
+        free_phone_lookup_delay_seconds=float(
+            os.getenv("TRUST_BRIDGE_FREE_PHONE_LOOKUP_DELAY_SECONDS", "0.2")
+        ),
+        free_phone_lookup_max_candidates=int(
+            os.getenv("TRUST_BRIDGE_FREE_PHONE_LOOKUP_MAX_CANDIDATES", "5")
+        ),
+        free_phone_lookup_max_per_run=int(
+            os.getenv("TRUST_BRIDGE_FREE_PHONE_LOOKUP_MAX_PER_RUN", "200")
+        ),
     )
 
     try:

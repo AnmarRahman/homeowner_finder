@@ -1,5 +1,3 @@
-from pathlib import Path
-
 from scraper.models import PropertyRecord
 from scraper.trust_bridge import (
     TrustBridgeOptions,
@@ -177,38 +175,42 @@ def test_map_property_record_respects_ownocc_flag() -> None:
     assert lead.owner_occupied == "yes"
 
 
-def test_build_trust_bridge_leads_enriches_phone_from_csv() -> None:
-    csv_path = Path("_test_skiptrace_enrichment.csv")
-    csv_path.write_text(
-        (
-            "full_name,property_address,city,state,zip_code,phone_number\n"
-            "Owner One,100 Oak St,Portland,OR,97201,503-444-1234\n"
-        ),
-        encoding="utf-8",
-    )
-    try:
-        record = PropertyRecord(
-            owner_name="Owner One",
-            property_address="100 Oak St",
-            mailing_address="100 Oak St",
-            city="Portland",
-            state="OR",
-            zip="97201",
-            property_type="Townhouse",
-            raw={},
-        )
+def test_build_trust_bridge_leads_enriches_phone_from_free_lookup(monkeypatch) -> None:
+    def fake_lookup(**_: object) -> dict[str, object]:
+        return {
+            "phones": [
+                {
+                    "number": "(503) 444-1234",
+                    "confidence": 92,
+                    "sources": ["unit-test"],
+                }
+            ],
+            "errors": [],
+        }
 
-        leads = build_trust_bridge_leads(
-            source_to_records={"mock": [record]},
-            final_limit=10,
-            options=TrustBridgeOptions(
-                allowed_states=("OR",),
-                require_dialable_phone=True,
-                enrichment_csv_path=str(csv_path),
-            ),
-        )
-    finally:
-        csv_path.unlink(missing_ok=True)
+    monkeypatch.setattr("scraper.trust_bridge.lookup_free_phones", fake_lookup)
+
+    record = PropertyRecord(
+        owner_name="Owner One",
+        property_address="100 Oak St",
+        mailing_address="100 Oak St",
+        city="Portland",
+        state="OR",
+        zip="97201",
+        property_type="Townhouse",
+        raw={},
+    )
+
+    leads = build_trust_bridge_leads(
+        source_to_records={"mock": [record]},
+        final_limit=10,
+        options=TrustBridgeOptions(
+            allowed_states=("OR",),
+            require_dialable_phone=True,
+            free_phone_lookup_enabled=True,
+            free_phone_lookup_use_browser=False,
+        ),
+    )
 
     assert len(leads) == 1
     assert leads[0].phone_number == "(503) 444-1234"
